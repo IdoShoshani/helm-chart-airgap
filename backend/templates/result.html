@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Packaging Result - Helm Airgap Packager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-10 mx-auto">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="mb-0">Packaging Result</h2>
+                <a href="{{ url_for('index') }}" class="btn btn-sm btn-outline-light">New Package</a>
+            </div>
+            <div class="card-body">
+                {% if job_data.get('status') == 'error' %}
+                <div class="alert alert-danger">
+                    <h5 class="alert-heading">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-exclamation-triangle" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                            <path d="M7.938 2.016A.13.13 0 0 1 8.002 2a.13.13 0 0 1 .063.016.146.146 0 0 1 .054.057l6.857 11.667c.036.06.035.124.002.183a.163.163 0 0 1-.054.06.116.116 0 0 1-.066.017H1.146a.115.115 0 0 1-.066-.017.163.163 0 0 1-.054-.06.176.176 0 0 1 .002-.183L7.884 2.073a.147.147 0 0 1 .054-.057zm1.044-.45a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566z"/>
+                            <path d="M7.002 12a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 5.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995z"/>
+                        </svg>
+                        Packaging Failed
+                    </h5>
+                    <p class="mb-0"><strong>Error:</strong> {{ job_data.get('error_message', 'Unknown error occurred') }}</p>
+                    {% if log_content %}
+                    <p class="mt-2 mb-0"><small>Check the packaging log below for detailed error information.</small></p>
+                    {% endif %}
+                </div>
+                {% elif job_data.get('status') == 'success' %}
+                <div class="alert alert-success">
+                    <h5 class="alert-heading">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-check-circle" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                            <path d="M10.97 4.97a.235.235 0 0 0-.02.022L7.477 9.417 2.604 6.303a.75.75 0 0 0-1.06 1.061l3.5 3.5a.75.75 0 0 0 1.154-.114l3.5-4.5a.75.75 0 0 0-.128-1.052z"/>
+                        </svg>
+                        Packaging Completed Successfully!
+                    </h5>
+                    <p class="mb-0">Your bundle is ready for download. Transfer it to your air-gapped environment and follow the instructions in the bundle's README.md file.</p>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <h5 class="alert-heading">Packaging in Progress</h5>
+                    <p class="mb-0">Status: {{ job_data.get('status', 'unknown') }}</p>
+                    <p class="mb-0 mt-2"><small>This page will not auto-refresh. Refresh manually to check status.</small></p>
+                </div>
+                {% endif %}
+                
+                <!-- Job Summary -->
+                <div class="mb-4">
+                    <h4>Job Summary</h4>
+                    <table class="table table-bordered">
+                        <tr>
+                            <th width="200">Job ID</th>
+                            <td><code>{{ job_id }}</code></td>
+                        </tr>
+                        {% if job_data.get('chart_name') %}
+                        <tr>
+                            <th>Chart Name</th>
+                            <td>{{ job_data.get('chart_name') }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if job_data.get('chart_version') %}
+                        <tr>
+                            <th>Chart Version</th>
+                            <td>{{ job_data.get('chart_version') }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if job_data.get('source_type') %}
+                        <tr>
+                            <th>Source Type</th>
+                            <td>{{ job_data.get('source_type') }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if job_data.get('images_count') is not none %}
+                        <tr>
+                            <th>Images Found</th>
+                            <td>{{ job_data.get('images_count', 0) }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if job_data.get('bundle_filename') %}
+                        <tr>
+                            <th>Bundle Filename</th>
+                            <td><code>{{ job_data.get('bundle_filename') }}</code></td>
+                        </tr>
+                        {% endif %}
+                        {% if job_data.get('created_at') %}
+                        <tr>
+                            <th>Created At</th>
+                            <td>{{ job_data.get('created_at') }}</td>
+                        </tr>
+                        {% endif %}
+                    </table>
+                </div>
+                
+                <!-- Download Button -->
+                {% if bundle_exists %}
+                <div class="mb-4">
+                    <a href="{{ url_for('download', job_id=job_id) }}" class="btn btn-success btn-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                            <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                        </svg>
+                        Download Bundle
+                    </a>
+                </div>
+                {% endif %}
+                
+                <!-- Images List -->
+                {% if job_data.get('images') %}
+                <div class="mb-4">
+                    <h4>Container Images</h4>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Image</th>
+                                    <th>Tag</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for image in job_data.get('images', []) %}
+                                <tr>
+                                    <td><code>{{ image }}</code></td>
+                                    <td>{{ image.split(':')[-1] if ':' in image else 'latest' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Log Output -->
+                {% if log_content %}
+                <div class="mb-4">
+                    <h4>Packaging Log</h4>
+                    <div class="card bg-dark text-light">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span>Detailed execution log</span>
+                            <button class="btn btn-sm btn-outline-light" onclick="copyLog()">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
+                                    <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                    <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                </svg>
+                                Copy Log
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <pre id="logContent" class="mb-0" style="max-height: 400px; overflow-y: auto; font-size: 0.875rem; white-space: pre-wrap; word-wrap: break-word;"><code>{{ log_content }}</code></pre>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyLog() {
+    const logContent = document.getElementById('logContent').textContent;
+    navigator.clipboard.writeText(logContent).then(function() {
+        const btn = event.target.closest('button');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check" viewBox="0 0 16 16"><path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/></svg> Copied!';
+        setTimeout(function() {
+            btn.innerHTML = originalText;
+        }, 2000);
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    container_name: helm-airgap-packager
+    ports:
+      - "${FLASK_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - FLASK_HOST=0.0.0.0
+      - FLASK_PORT=8000
+      - FLASK_DEBUG=${FLASK_DEBUG:-false}
+      - DATA_DIR=/app/data
+      - HELM_TIMEOUT=${HELM_TIMEOUT:-300}
+      - HELM_RETRY_LIMIT=${HELM_RETRY_LIMIT:-3}
+      - IMAGE_PULL_TIMEOUT=${IMAGE_PULL_TIMEOUT:-600}
+      - MAX_IMAGES=${MAX_IMAGES:-100}
+      - MAX_BUNDLE_SIZE_GB=${MAX_BUNDLE_SIZE_GB:-50}
+      - REGISTRY_USERNAME=${REGISTRY_USERNAME:-}
+      - REGISTRY_PASSWORD=${REGISTRY_PASSWORD:-}
+      - REGISTRY_SERVER=${REGISTRY_SERVER:-}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+    restart: unless-stopped

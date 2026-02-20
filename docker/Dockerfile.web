@@ -1,0 +1,47 @@
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    tar \
+    gzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Helm
+RUN curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Install Crane (go-containerregistry)
+RUN curl -L https://github.com/google/go-containerregistry/releases/latest/download/go-containerregistry_Linux_x86_64.tar.gz -o /tmp/crane.tar.gz && \
+    tar -xzf /tmp/crane.tar.gz -C /tmp && \
+    mv /tmp/crane /usr/local/bin/crane && \
+    chmod +x /usr/local/bin/crane && \
+    rm /tmp/crane.tar.gz
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY backend/ ./backend/
+
+# Create data directories
+RUN mkdir -p /app/data/jobs /app/data/bundles
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV FLASK_APP=backend.app.main
+ENV DATA_DIR=/app/data
+
+# Expose port
+EXPOSE 8000
+
+# Run as non-root user
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+USER appuser
+
+# Run the application
+CMD ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=8000"]

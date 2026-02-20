@@ -1,0 +1,29 @@
+Initial implementation of Helm Airgap Packager
+
+A simple Python web application that helps users package Helm charts and
+their container images for installation in air-gapped environments.
+
+Features:
+- Web-based UI with Flask backend and Bootstrap frontend
+- Support for both Helm repositories and OCI registries
+- Automatic discovery and download of container images from chart templates
+- Creates offline bundles containing charts, images, and deployment instructions
+- Docker Compose setup for easy deployment
+- Comprehensive error handling and validation
+- Detailed packaging logs and job tracking
+
+Components:
+- Flask application (backend/app/main.py) with routes for packaging and downloads
+- Core packaging logic (backend/app/packager.py) handling chart fetching,
+  template rendering, image discovery, and bundle creation
+- Configuration management (backend/app/settings.py) with environment variables
+- Jinja templates for web UI (backend/templates/)
+- Dockerfile with Python, Helm, and Crane tools
+- Docker Compose configuration for containerized deployment
+
+The application automatically:
+1. Downloads Helm charts from repositories or OCI registries
+2. Renders chart templates with user-provided values
+3. Discovers all container images referenced in the rendered manifests
+4. Downloads all images using Crane
+5. Packages everything into a single tarball with deployment instructions

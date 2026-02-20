@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="mb-0">Package Helm Chart for Air-Gap</h2>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('package') }}" enctype="multipart/form-data">
+                    <!-- Source Type -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Chart Source *</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="source_type" id="source_repo" value="repo" 
+                                   {% if source_type == 'repo' or not source_type %}checked{% endif %} required>
+                            <label class="form-check-label" for="source_repo">
+                                Helm Repository
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="source_type" id="source_oci" value="oci"
+                                   {% if source_type == 'oci' %}checked{% endif %}>
+                            <label class="form-check-label" for="source_oci">
+                                OCI Registry
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Helm Repository Fields -->
+                    <div id="repo_fields" style="display: {% if source_type == 'oci' %}none{% else %}block{% endif %};">
+                        <div class="mb-3">
+                            <label for="repo_url" class="form-label">Repository URL *</label>
+                            <input type="text" class="form-control" id="repo_url" name="repo_url" 
+                                   value="{{ repo_url or '' }}" 
+                                   placeholder="https://charts.example.com or https://charts.helm.sh/stable">
+                            <small class="form-text text-muted">Full URL to the Helm repository</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="chart_name" class="form-label">Chart Name *</label>
+                            <input type="text" class="form-control" id="chart_name" name="chart_name" 
+                                   value="{{ chart_name or '' }}" 
+                                   placeholder="nginx-ingress">
+                        </div>
+                        <div class="mb-3">
+                            <label for="chart_version" class="form-label">Chart Version</label>
+                            <input type="text" class="form-control" id="chart_version" name="chart_version" 
+                                   value="{{ chart_version or '' }}" 
+                                   placeholder="Leave empty for latest">
+                        </div>
+                    </div>
+                    
+                    <!-- OCI Fields -->
+                    <div id="oci_fields" style="display: {% if source_type == 'oci' %}block{% else %}none{% endif %};">
+                        <div class="mb-3">
+                            <label for="oci_chart" class="form-label">OCI Chart URL *</label>
+                            <input type="text" class="form-control" id="oci_chart" name="oci_chart" 
+                                   value="{{ oci_chart or '' }}" 
+                                   placeholder="oci://registry.example.com/charts/my-chart">
+                            <small class="form-text text-muted">Full OCI registry URL (oci:// prefix required)</small>
+                        </div>
+                    </div>
+                    
+                    <!-- Values -->
+                    <div class="mb-3">
+                        <label class="form-label">Values Configuration (Optional)</label>
+                        <small class="form-text text-muted d-block mb-2">
+                            Provide custom values to override chart defaults. This helps discover the correct container images.
+                        </small>
+                        <div class="mb-2">
+                            <label for="values_yaml" class="form-label">Values YAML</label>
+                            <textarea class="form-control font-monospace" id="values_yaml" name="values_yaml" rows="8" 
+                                      placeholder="# Enter your values.yaml content here&#10;# Example:&#10;# image:&#10;#   repository: nginx&#10;#   tag: 1.21">{{ values_yaml or '' }}</textarea>
+                        </div>
+                        <div class="mb-2">
+                            <label for="values_file" class="form-label">Or upload values.yaml file</label>
+                            <input type="file" class="form-control" id="values_file" name="values_file" accept=".yaml,.yml">
+                            <small class="form-text text-muted">Maximum file size: 16MB</small>
+                        </div>
+                    </div>
+                    
+                    <!-- Bundle Options -->
+                    <div class="mb-3">
+                        <label for="bundle_name" class="form-label">Bundle Name (Optional)</label>
+                        <input type="text" class="form-control" id="bundle_name" name="bundle_name" 
+                               value="{{ bundle_name or '' }}" 
+                               placeholder="Leave empty for auto-generated name">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="include_images" name="include_images" value="yes"
+                                   {% if include_images != False %}checked{% endif %}>
+                            <label class="form-check-label" for="include_images">
+                                Include container images in bundle
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">Package Chart</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="mt-4">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title">How it works</h5>
+                    <ol>
+                        <li>Enter your Helm chart source (repository or OCI registry)</li>
+                        <li>Optionally provide values.yaml to customize the chart</li>
+                        <li>The tool will automatically:
+                            <ul>
+                                <li>Download the Helm chart and dependencies</li>
+                                <li>Discover all container images referenced in the chart</li>
+                                <li>Download all images</li>
+                                <li>Package everything into a single bundle</li>
+                            </ul>
+                        </li>
+                        <li>Download the bundle and transfer it to your air-gapped environment</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const repoRadio = document.getElementById('source_repo');
+    const ociRadio = document.getElementById('source_oci');
+    const repoFields = document.getElementById('repo_fields');
+    const ociFields = document.getElementById('oci_fields');
+    
+    function toggleFields() {
+        if (repoRadio.checked) {
+            repoFields.style.display = 'block';
+            ociFields.style.display = 'none';
+            document.getElementById('oci_chart').removeAttribute('required');
+            document.getElementById('repo_url').setAttribute('required', 'required');
+            document.getElementById('chart_name').setAttribute('required', 'required');
+        } else {
+            repoFields.style.display = 'none';
+            ociFields.style.display = 'block';
+            document.getElementById('repo_url').removeAttribute('required');
+            document.getElementById('chart_name').removeAttribute('required');
+            document.getElementById('oci_chart').setAttribute('required', 'required');
+        }
+    }
+    
+    repoRadio.addEventListener('change', toggleFields);
+    ociRadio.addEventListener('change', toggleFields);
+});
+</script>
+{% endblock %}
