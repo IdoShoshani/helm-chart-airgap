@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}Jobs - Helm Airgap Packager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>Packaging Jobs</h2>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary" id="jobsPageRefreshBtn" title="Reload job list">Refresh list</button>
+                <a href="{{ url_for('index') }}" class="btn btn-primary">New Package</a>
+            </div>
+        </div>
+
+        <div class="alert alert-info">
+            <strong>Background jobs:</strong> Packaging runs on the server. You can close the browser and come back later. 
+            Use this page to view all runs and download completed bundles.
+        </div>
+
+        <div id="autoRefreshNotice" class="alert alert-light border mb-3" style="display: none !important;">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="spinner-border spinner-border-sm" role="status" id="jobsSpinner"></span>
+                <span>Refresh:</span>
+                <select id="jobsRefreshInterval" class="form-select form-select-sm" style="width: auto;">
+                    <option value="0">Off</option>
+                    <option value="4">Every 4s</option>
+                    <option value="8" selected>Every 8s</option>
+                    <option value="15">Every 15s</option>
+                    <option value="30">Every 30s</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="jobsRefreshNow">Refresh now</button>
+                <span class="small text-muted" id="autoRefreshText"></span>
+            </div>
+        </div>
+
+        {% if jobs %}
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Job ID</th>
+                                <th>Chart</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for job in jobs %}
+                            <tr>
+                                <td><code class="small">{{ job.job_id[:8] }}...</code></td>
+                                <td>
+                                    {% if job.chart_name %}
+                                    {{ job.chart_name }}{% if job.chart_version %} ({{ job.chart_version }}){% endif %}
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if job.status == 'success' %}
+                                    <span class="badge bg-success">Success</span>
+                                    {% elif job.status == 'error' %}
+                                    <span class="badge bg-danger">Failed</span>
+                                    {% elif job.status == 'cancelled' %}
+                                    <span class="badge bg-warning">Cancelled</span>
+                                    {% elif job.status == 'in_progress' %}
+                                    <span class="badge bg-primary">Running</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ job.status or 'Unknown' }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if job.created_at %}
+                                    <small>{{ job.created_at[:19] }}</small>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group" role="group">
+                                        <a href="{{ url_for('result', job_id=job.job_id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                                        {% if job.status == 'in_progress' %}
+                                        <form method="POST" action="{{ url_for('job_cancel', job_id=job.job_id) }}" class="d-inline" onsubmit="return confirm('Cancel this running job?');">
+                                            <button type="submit" class="btn btn-sm btn-outline-warning">Cancel</button>
+                                        </form>
+                                        {% elif job.status in ['error', 'cancelled'] %}
+                                        <form method="POST" action="{{ url_for('job_retry', job_id=job.job_id) }}" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-outline-info">Retry</button>
+                                        </form>
+                                        {% endif %}
+                                        {% if job.bundle_exists %}
+                                        <a href="{{ url_for('download', job_id=job.job_id) }}" class="btn btn-sm btn-success">Download</a>
+                                        {% endif %}
+                                        <form method="POST" action="{{ url_for('job_delete', job_id=job.job_id) }}" class="d-inline" onsubmit="return confirm('Delete this job?{% if job.bundle_exists %} The bundle will be kept unless you check the option below.{% endif %}');">
+                                            <div class="dropdown d-inline">
+                                                <button class="btn btn-sm btn-outline-danger dropdown-toggle" type="button" data-bs-toggle="dropdown">Delete</button>
+                                                <ul class="dropdown-menu">
+                                                    <li>
+                                                        <button type="submit" class="dropdown-item">Delete job only</button>
+                                                    </li>
+                                                    {% if job.bundle_exists %}
+                                                    <li>
+                                                        <button type="submit" class="dropdown-item" name="delete_bundle" value="true">Delete job and bundle</button>
+                                                    </li>
+                                                    {% endif %}
+                                                </ul>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-secondary">
+            No jobs yet. <a href="{{ url_for('index') }}">Package a chart</a> to get started.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+(function() {
+    // "Refresh list" button: always visible, reloads the page
+    var pageRefreshBtn = document.getElementById('jobsPageRefreshBtn');
+    if (pageRefreshBtn) {
+        pageRefreshBtn.addEventListener('click', function() {
+            window.location.reload();
+        });
+    }
+
+    var STORAGE_KEY = 'helm_airgap_refresh_interval';
+    var hasRunning = {{ 'true' if has_running_jobs else 'false' }};
+    var notice = document.getElementById('autoRefreshNotice');
+    var textEl = document.getElementById('autoRefreshText');
+    var selectEl = document.getElementById('jobsRefreshInterval');
+    var spinnerEl = document.getElementById('jobsSpinner');
+    var timerId = null;
+
+    if (!hasRunning) return;
+
+    notice.style.display = 'flex';
+
+    function getIntervalSec() { return parseInt(selectEl.value, 10) || 0; }
+    function saveChoice() { try { localStorage.setItem(STORAGE_KEY, selectEl.value); } catch (e) {} }
+    function restoreChoice() {
+        try {
+            var v = localStorage.getItem(STORAGE_KEY);
+            if (v !== null && selectEl.querySelector('option[value="' + v + '"]')) { selectEl.value = v; }
+        } catch (e) {}
+    }
+
+    function scheduleReload() {
+        var sec = getIntervalSec();
+        if (sec <= 0) {
+            textEl.textContent = 'Auto-refresh is off.';
+            spinnerEl.style.visibility = 'hidden';
+            return;
+        }
+        spinnerEl.style.visibility = 'visible';
+        var count = sec;
+        function tick() {
+            if (count <= 0) {
+                textEl.textContent = 'Refreshing...';
+                window.location.reload();
+                return;
+            }
+            textEl.textContent = 'Refreshing in ' + count + 's (running jobs)';
+            count--;
+            timerId = setTimeout(tick, 1000);
+        }
+        tick();
+    }
+
+    function startCountdown() {
+        if (timerId) clearTimeout(timerId);
+        var sec = getIntervalSec();
+        if (sec <= 0) {
+            textEl.textContent = 'Auto-refresh is off.';
+            if (spinnerEl) spinnerEl.style.visibility = 'hidden';
+            return;
+        }
+        if (spinnerEl) spinnerEl.style.visibility = 'visible';
+        scheduleReload();
+    }
+
+    restoreChoice();
+    selectEl.addEventListener('change', function() {
+        saveChoice();
+        startCountdown();
+    });
+    var jobsRefreshNow = document.getElementById('jobsRefreshNow');
+    if (jobsRefreshNow) {
+        jobsRefreshNow.addEventListener('click', function(e) {
+            e.preventDefault();
+            window.location.reload();
+        });
+    }
+    startCountdown();
+})();
+</script>
+{% endblock %}

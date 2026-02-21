@@ -1,6 +1,111 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- Jobs list (same page as package form) -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h2 class="mb-0">Packaging Jobs</h2>
+            <button type="button" class="btn btn-outline-secondary" id="jobsPageRefreshBtn" title="Reload job list">Refresh list</button>
+        </div>
+        <div class="alert alert-info py-2">
+            <strong>Background jobs:</strong> Packaging runs on the server. You can close the browser and come back later. Start a new package with the form below.
+        </div>
+        <div id="autoRefreshNotice" class="alert alert-light border mb-3" style="display: none !important;">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="spinner-border spinner-border-sm" role="status" id="jobsSpinner"></span>
+                <span>Refresh:</span>
+                <select id="jobsRefreshInterval" class="form-select form-select-sm" style="width: auto;">
+                    <option value="0">Off</option>
+                    <option value="4">Every 4s</option>
+                    <option value="8" selected>Every 8s</option>
+                    <option value="15">Every 15s</option>
+                    <option value="30">Every 30s</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="jobsRefreshNow">Refresh now</button>
+                <span class="small text-muted" id="autoRefreshText"></span>
+            </div>
+        </div>
+        {% if jobs %}
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Job ID</th>
+                                <th>Chart</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for job in jobs %}
+                            <tr>
+                                <td><code class="small">{{ job.job_id[:8] }}...</code></td>
+                                <td>
+                                    {% if job.chart_name %}
+                                    {{ job.chart_name }}{% if job.chart_version %} ({{ job.chart_version }}){% endif %}
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if job.status == 'success' %}
+                                    <span class="badge bg-success">Success</span>
+                                    {% elif job.status == 'error' %}
+                                    <span class="badge bg-danger">Failed</span>
+                                    {% elif job.status == 'cancelled' %}
+                                    <span class="badge bg-warning">Cancelled</span>
+                                    {% elif job.status == 'in_progress' %}
+                                    <span class="badge bg-primary">Running</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ job.status or 'Unknown' }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if job.created_at %}
+                                    <small>{{ job.created_at[:19] }}</small>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group" role="group">
+                                        <a href="{{ url_for('result', job_id=job.job_id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                                        {% if job.status == 'in_progress' %}
+                                        <form method="POST" action="{{ url_for('job_cancel', job_id=job.job_id) }}" class="d-inline" onsubmit="return confirm('Cancel this running job?');">
+                                            <button type="submit" class="btn btn-sm btn-outline-warning">Cancel</button>
+                                        </form>
+                                        {% elif job.status in ['error', 'cancelled'] %}
+                                        <form method="POST" action="{{ url_for('job_retry', job_id=job.job_id) }}" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-outline-info">Retry</button>
+                                        </form>
+                                        {% endif %}
+                                        {% if job.bundle_exists %}
+                                        <a href="{{ url_for('download', job_id=job.job_id) }}" class="btn btn-sm btn-success">Download</a>
+                                        {% endif %}
+                                        <form method="POST" action="{{ url_for('job_delete', job_id=job.job_id) }}" class="d-inline" onsubmit="return confirm('Delete this job and its bundle? This cannot be undone.');">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-secondary">
+            No jobs yet. Use the form below to package a chart.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
 <div class="row">
     <div class="col-lg-8 mx-auto">
         <div class="card">
@@ -30,25 +135,56 @@
                     
                     <!-- Helm Repository Fields -->
                     <div id="repo_fields" style="display: {% if source_type == 'oci' %}none{% else %}block{% endif %};">
+                        {% if repos %}
+                        <div class="mb-3 d-flex flex-wrap align-items-center gap-2">
+                            <span class="text-muted small">Chart list</span>
+                            <span id="repos_updated_display" class="small text-muted">Last updated: {{ repos_updated_at[:19] if repos_updated_at else 'Never' }}</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="repos_refresh_btn">Refresh now</button>
+                        </div>
+                        <div class="mb-3">
+                            <label for="repo_select" class="form-label">Repository *</label>
+                            <select class="form-select" id="repo_select" required>
+                                <option value="">Select a repository</option>
+                                {% for r in repos %}
+                                <option value="{{ r.name }}" data-url="{{ r.url }}">{{ r.name }} ({{ r.url }})</option>
+                                {% endfor %}
+                            </select>
+                            <input type="hidden" id="repo_url" name="repo_url" value="{{ repo_url or '' }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="chart_search" class="form-label">Search charts *</label>
+                            <input type="text" class="form-control" id="chart_search" placeholder="Type to search charts..."
+                                   autocomplete="off">
+                            <div id="chart_search_results" class="list-group mt-1" style="max-height: 200px; overflow-y: auto; display: none;"></div>
+                            <input type="hidden" id="chart_name" name="chart_name" value="{{ chart_name or '' }}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="chart_version_select" class="form-label">Chart version *</label>
+                            <select class="form-select" id="chart_version_select" name="chart_version" disabled>
+                                <option value="">Select a chart first</option>
+                            </select>
+                            <small class="form-text text-muted">Pick a version from the list (no typos).</small>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-warning mb-3">
+                            <a href="{{ url_for('repos_list') }}">Add Helm repositories</a> first to search and select charts. Or enter details manually below.
+                        </div>
                         <div class="mb-3">
                             <label for="repo_url" class="form-label">Repository URL *</label>
-                            <input type="text" class="form-control" id="repo_url" name="repo_url" 
-                                   value="{{ repo_url or '' }}" 
-                                   placeholder="https://charts.example.com or https://charts.helm.sh/stable">
-                            <small class="form-text text-muted">Full URL to the Helm repository</small>
+                            <input type="text" class="form-control" id="repo_url" name="repo_url" value="{{ repo_url or '' }}"
+                                   placeholder="https://charts.example.com">
                         </div>
                         <div class="mb-3">
                             <label for="chart_name" class="form-label">Chart Name *</label>
-                            <input type="text" class="form-control" id="chart_name" name="chart_name" 
-                                   value="{{ chart_name or '' }}" 
-                                   placeholder="nginx-ingress">
+                            <input type="text" class="form-control" id="chart_name" name="chart_name" value="{{ chart_name or '' }}"
+                                   placeholder="e.g. elasticsearch">
                         </div>
                         <div class="mb-3">
                             <label for="chart_version" class="form-label">Chart Version</label>
-                            <input type="text" class="form-control" id="chart_version" name="chart_version" 
-                                   value="{{ chart_version or '' }}" 
+                            <input type="text" class="form-control" id="chart_version" name="chart_version" value="{{ chart_version or '' }}"
                                    placeholder="Leave empty for latest">
                         </div>
+                        {% endif %}
                     </div>
                     
                     <!-- OCI Fields -->
@@ -57,8 +193,25 @@
                             <label for="oci_chart" class="form-label">OCI Chart URL *</label>
                             <input type="text" class="form-control" id="oci_chart" name="oci_chart" 
                                    value="{{ oci_chart or '' }}" 
-                                   placeholder="oci://registry.example.com/charts/my-chart">
-                            <small class="form-text text-muted">Full OCI registry URL (oci:// prefix required)</small>
+                                   placeholder="oci://ghcr.io/nicklasfrahm/charts/argocd">
+                            <small class="form-text text-muted">
+                                Full OCI registry URL (oci:// prefix required).<br>
+                                <strong>Common Registries:</strong><br>
+                                • <code>oci://ghcr.io/owner/charts/chart-name</code> (GitHub Container Registry)<br>
+                                • <code>oci://quay.io/owner/chart-name</code> (Quay.io)<br>
+                                • <code>oci://registry.k8s.io/charts/chart-name</code> (Kubernetes Registry)<br>
+                                • <code>oci://registry.example.com/charts/my-chart</code> (Private registry)<br><br>
+                                <strong>Authentication:</strong> For private registries, configure credentials via 
+                                <a href="{{ url_for('credentials_list') }}">Registry Credentials</a> page or 
+                                Docker Compose environment variables.
+                            </small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="oci_version" class="form-label">Chart Version (Optional)</label>
+                            <input type="text" class="form-control" id="oci_version" name="oci_version" 
+                                   value="{{ oci_version or '' }}" 
+                                   placeholder="Leave empty for latest">
+                            <small class="form-text text-muted">Specify a version tag (e.g., 1.2.3) or leave empty for latest</small>
                         </div>
                     </div>
                     
@@ -112,6 +265,7 @@
                     <ol>
                         <li>Enter your Helm chart source (repository or OCI registry)</li>
                         <li>Optionally provide values.yaml to customize the chart</li>
+                        <li>Click &quot;Package Chart&quot; — you&apos;ll see a <strong>progress page</strong> with a live progress bar</li>
                         <li>The tool will automatically:
                             <ul>
                                 <li>Download the Helm chart and dependencies</li>
@@ -134,25 +288,216 @@ document.addEventListener('DOMContentLoaded', function() {
     const ociRadio = document.getElementById('source_oci');
     const repoFields = document.getElementById('repo_fields');
     const ociFields = document.getElementById('oci_fields');
-    
+
     function toggleFields() {
         if (repoRadio.checked) {
             repoFields.style.display = 'block';
             ociFields.style.display = 'none';
             document.getElementById('oci_chart').removeAttribute('required');
-            document.getElementById('repo_url').setAttribute('required', 'required');
-            document.getElementById('chart_name').setAttribute('required', 'required');
+            var repoUrl = document.getElementById('repo_url');
+            var chartName = document.getElementById('chart_name');
+            if (repoUrl) repoUrl.setAttribute('required', 'required');
+            if (chartName) chartName.setAttribute('required', 'required');
         } else {
             repoFields.style.display = 'none';
             ociFields.style.display = 'block';
-            document.getElementById('repo_url').removeAttribute('required');
-            document.getElementById('chart_name').removeAttribute('required');
+            var repoUrl = document.getElementById('repo_url');
+            var chartName = document.getElementById('chart_name');
+            if (repoUrl) repoUrl.removeAttribute('required');
+            if (chartName) chartName.removeAttribute('required');
             document.getElementById('oci_chart').setAttribute('required', 'required');
         }
     }
-    
+
     repoRadio.addEventListener('change', toggleFields);
     ociRadio.addEventListener('change', toggleFields);
+
+    // Repo flow: select repo, search charts, select version
+    var repoSelect = document.getElementById('repo_select');
+    var chartSearch = document.getElementById('chart_search');
+    var chartSearchResults = document.getElementById('chart_search_results');
+    var chartVersionSelect = document.getElementById('chart_version_select');
+    var reposRefreshBtn = document.getElementById('repos_refresh_btn');
+    var reposUpdatedDisplay = document.getElementById('repos_updated_display');
+
+    if (repoSelect) {
+        repoSelect.addEventListener('change', function() {
+            var opt = this.options[this.selectedIndex];
+            var urlInput = document.getElementById('repo_url');
+            if (urlInput && opt && opt.value) urlInput.value = opt.getAttribute('data-url') || '';
+            if (chartSearchResults) chartSearchResults.style.display = 'none';
+            if (chartVersionSelect) {
+                chartVersionSelect.disabled = true;
+                chartVersionSelect.innerHTML = '<option value="">Select a chart first</option>';
+            }
+            var chartNameInput = document.getElementById('chart_name');
+            if (chartNameInput) chartNameInput.value = '';
+        });
+    }
+
+    var searchDebounce;
+    if (chartSearch) {
+        chartSearch.addEventListener('input', function() {
+            clearTimeout(searchDebounce);
+            var q = this.value.trim();
+            if (!q.length) {
+                chartSearchResults.style.display = 'none';
+                return;
+            }
+            searchDebounce = setTimeout(function() {
+                fetch('/api/repos/charts?q=' + encodeURIComponent(q))
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        var charts = data.charts || [];
+                        chartSearchResults.innerHTML = '';
+                        if (charts.length === 0) {
+                            chartSearchResults.innerHTML = '<div class="list-group-item text-muted">No charts found</div>';
+                        } else {
+                            charts.slice(0, 50).forEach(function(c) {
+                                var a = document.createElement('a');
+                                a.href = '#';
+                                a.className = 'list-group-item list-group-item-action';
+                                a.textContent = c.repo + '/' + c.chart + (c.version ? ' (' + c.version + ')' : '');
+                                a.dataset.repo = c.repo;
+                                a.dataset.chart = c.chart;
+                                a.addEventListener('click', function(e) {
+                                    e.preventDefault();
+                                    document.getElementById('chart_name').value = c.chart;
+                                    document.getElementById('repo_url').value = c.repo_url || '';
+                                    var rs = document.getElementById('repo_select');
+                                    if (rs) { rs.value = c.repo; }
+                                    chartSearch.value = c.repo + '/' + c.chart;
+                                    chartSearchResults.style.display = 'none';
+                                    chartVersionSelect.disabled = true;
+                                    chartVersionSelect.innerHTML = '<option value="">Loading versions...</option>';
+                                    fetch('/api/repos/charts/' + encodeURIComponent(c.repo) + '/' + encodeURIComponent(c.chart) + '/versions')
+                                        .then(function(r) { return r.json(); })
+                                        .then(function(vdata) {
+                                            var versions = vdata.versions || [];
+                                            chartVersionSelect.innerHTML = '<option value="">Latest</option>';
+                                            versions.forEach(function(v) {
+                                                var o = document.createElement('option');
+                                                o.value = v;
+                                                o.textContent = v;
+                                                chartVersionSelect.appendChild(o);
+                                            });
+                                            chartVersionSelect.disabled = false;
+                                        })
+                                        .catch(function() {
+                                            chartVersionSelect.innerHTML = '<option value="">Error loading versions</option>';
+                                            chartVersionSelect.disabled = false;
+                                        });
+                                });
+                                chartSearchResults.appendChild(a);
+                            });
+                        }
+                        chartSearchResults.style.display = 'block';
+                    })
+                    .catch(function() {
+                        chartSearchResults.innerHTML = '<div class="list-group-item text-danger">Search failed</div>';
+                        chartSearchResults.style.display = 'block';
+                    });
+            }, 300);
+        });
+    }
+
+    document.addEventListener('click', function(e) {
+        if (chartSearchResults && chartSearch && !chartSearchResults.contains(e.target) && e.target !== chartSearch) {
+            chartSearchResults.style.display = 'none';
+        }
+    });
+
+    if (reposRefreshBtn && reposUpdatedDisplay) {
+        reposRefreshBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            reposRefreshBtn.disabled = true;
+            reposRefreshBtn.textContent = 'Updating...';
+            fetch('{{ url_for("api_repos_update") }}', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            })
+                .then(function(r) {
+                    if (!r.ok) throw new Error('Update failed');
+                    return r.json();
+                })
+                .then(function(data) {
+                    if (data.ok && data.updated_at) {
+                        reposUpdatedDisplay.textContent = 'Last updated: ' + data.updated_at.slice(0, 19);
+                    }
+                })
+                .catch(function() {
+                    reposUpdatedDisplay.textContent = 'Refresh failed. Try again.';
+                })
+                .finally(function() {
+                    reposRefreshBtn.disabled = false;
+                    reposRefreshBtn.textContent = 'Refresh now';
+                });
+        });
+    }
 });
+</script>
+<script>
+(function() {
+    var pageRefreshBtn = document.getElementById('jobsPageRefreshBtn');
+    if (pageRefreshBtn) {
+        pageRefreshBtn.addEventListener('click', function() { window.location.reload(); });
+    }
+    var STORAGE_KEY = 'helm_airgap_refresh_interval';
+    var hasRunning = {{ 'true' if has_running_jobs else 'false' }};
+    var notice = document.getElementById('autoRefreshNotice');
+    var textEl = document.getElementById('autoRefreshText');
+    var selectEl = document.getElementById('jobsRefreshInterval');
+    var spinnerEl = document.getElementById('jobsSpinner');
+    var timerId = null;
+    if (!notice || !hasRunning) return;
+    notice.style.display = 'flex';
+    function getIntervalSec() { return parseInt(selectEl.value, 10) || 0; }
+    function saveChoice() { try { localStorage.setItem(STORAGE_KEY, selectEl.value); } catch (e) {} }
+    function restoreChoice() {
+        try {
+            var v = localStorage.getItem(STORAGE_KEY);
+            if (v !== null && selectEl.querySelector('option[value="' + v + '"]')) { selectEl.value = v; }
+        } catch (e) {}
+    }
+    function scheduleReload() {
+        var sec = getIntervalSec();
+        if (sec <= 0) {
+            textEl.textContent = 'Auto-refresh is off.';
+            spinnerEl.style.visibility = 'hidden';
+            return;
+        }
+        spinnerEl.style.visibility = 'visible';
+        var count = sec;
+        function tick() {
+            if (count <= 0) {
+                textEl.textContent = 'Refreshing...';
+                window.location.reload();
+                return;
+            }
+            textEl.textContent = 'Refreshing in ' + count + 's (running jobs)';
+            count--;
+            timerId = setTimeout(tick, 1000);
+        }
+        tick();
+    }
+    function startCountdown() {
+        if (timerId) clearTimeout(timerId);
+        var sec = getIntervalSec();
+        if (sec <= 0) {
+            textEl.textContent = 'Auto-refresh is off.';
+            if (spinnerEl) spinnerEl.style.visibility = 'hidden';
+            return;
+        }
+        if (spinnerEl) spinnerEl.style.visibility = 'visible';
+        scheduleReload();
+    }
+    restoreChoice();
+    selectEl.addEventListener('change', function() { saveChoice(); startCountdown(); });
+    var jobsRefreshNow = document.getElementById('jobsRefreshNow');
+    if (jobsRefreshNow) jobsRefreshNow.addEventListener('click', function(e) { e.preventDefault(); window.location.reload(); });
+    startCountdown();
+})();
 </script>
 {% endblock %}

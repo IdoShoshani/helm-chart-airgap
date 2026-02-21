@@ -26,6 +26,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY backend/ ./backend/
+# Copy entrypoint for optional reload in debug mode
+COPY docker/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Create data directories
 RUN mkdir -p /app/data/jobs /app/data/bundles
@@ -43,5 +46,5 @@ RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 USER appuser
 
-# Run the application
-CMD ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=8000"]
+# Run the application (entrypoint adds --reload when FLASK_DEBUG=true)
+ENTRYPOINT ["/app/entrypoint.sh"]

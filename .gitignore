@@ -17,6 +17,9 @@ instance/
 data/
 *.log
 
+# Credentials (sensitive)
+data/credentials/
+
 # Environment variables
 .env
 

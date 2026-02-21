@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block title %}Packaging in Progress - Helm Airgap Packager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="mb-0">Packaging in Progress</h2>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Job ID: <code>{{ job_id }}</code></p>
+                
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span id="progressMessage">Starting...</span>
+                        <span id="progressPercent">0%</span>
+                    </div>
+                    <div class="progress" style="height: 24px;">
+                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                    </div>
+                </div>
+                
+                <div id="progressDetails" class="small text-muted mb-3" style="min-height: 1.5em;"></div>
+                
+                <div id="imagesStatusSection" class="mb-3" style="display: none;">
+                    <h6 class="mb-2">Image status</h6>
+                    <div class="table-responsive" style="max-height: 200px; overflow-y: auto;">
+                        <table class="table table-sm table-striped mb-0">
+                            <thead><tr><th>Image</th><th>Status</th></tr></thead>
+                            <tbody id="imagesStatusBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div id="liveLogSection" class="mb-3">
+                    <h6 class="mb-2">Live log</h6>
+                    <pre id="liveLogContent" class="bg-dark text-light p-2 rounded small" style="max-height: 220px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; font-size: 0.75rem;">Loading...</pre>
+                </div>
+                
+                <div id="cancelAction" class="mb-3">
+                    <form method="POST" action="/job/{{ job_id }}/cancel" onsubmit="return confirm('Cancel this job? It will stop at the next checkpoint.');">
+                        <button type="submit" class="btn btn-warning">Cancel Job</button>
+                    </form>
+                </div>
+                
+                <div id="completedActions" style="display: none;">
+                    <div class="alert alert-success">
+                        <strong>Packaging complete.</strong>
+                        <span id="redirectCountdown" class="d-block mt-2 small"></span>
+                        <a href="#" id="viewResultLink" class="alert-link">View result and download bundle</a> — or wait to be redirected.
+                    </div>
+                </div>
+                
+                <div id="errorActions" style="display: none;">
+                    <div class="alert alert-danger">
+                        <strong id="errorTitle">Packaging failed.</strong>
+                        <span id="errorCountdown" class="d-block mt-2 small"></span>
+                        <a href="#" id="viewErrorLink" class="alert-link">View details</a> — or wait to be redirected.
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card bg-light mt-3">
+            <div class="card-body">
+                <h6 class="card-title">Timeouts (configurable via environment)</h6>
+                <ul class="mb-0 small">
+                    <li><strong>Helm operations</strong> (fetch chart, dependencies): {{ helm_timeout }} seconds per command</li>
+                    <li><strong>Image download</strong>: {{ image_pull_timeout }} seconds per image</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const jobId = "{{ job_id }}";
+    const progressBar = document.getElementById('progressBar');
+    const progressMessage = document.getElementById('progressMessage');
+    const progressPercent = document.getElementById('progressPercent');
+    const progressDetails = document.getElementById('progressDetails');
+    const completedActions = document.getElementById('completedActions');
+    const errorActions = document.getElementById('errorActions');
+    const viewResultLink = document.getElementById('viewResultLink');
+    const viewErrorLink = document.getElementById('viewErrorLink');
+    
+    const resultUrl = '/result/' + jobId;
+    viewResultLink.href = resultUrl;
+    viewErrorLink.href = resultUrl;
+    
+    const REDIRECT_DELAY_SUCCESS = 3;
+    const REDIRECT_DELAY_ERROR = 4;
+    
+    function scheduleRedirect(url, countdownElId, delay) {
+        var countdown = delay;
+        var el = document.getElementById(countdownElId);
+        var t = setInterval(function() {
+            if (countdown <= 0) {
+                clearInterval(t);
+                window.location.href = url;
+                return;
+            }
+            if (el) el.textContent = 'Redirecting in ' + countdown + ' second' + (countdown !== 1 ? 's' : '') + '...';
+            countdown--;
+        }, 1000);
+    }
+    
+    function updateProgress(data) {
+        const progress = data.progress || {};
+        const percent = Math.round(progress.percent || 0);
+        const message = progress.message || 'Processing...';
+        const details = progress.details || {};
+        
+        progressBar.style.width = percent + '%';
+        progressBar.setAttribute('aria-valuenow', percent);
+        progressBar.textContent = percent + '%';
+        progressMessage.textContent = message;
+        progressPercent.textContent = percent + '%';
+        
+        var detailsHtml = '';
+        if (details.current !== undefined && details.total !== undefined) {
+            detailsHtml = 'Image ' + details.current + ' of ' + details.total;
+            if (details.image) detailsHtml += ': ' + details.image;
+        } else if (details.bundle) {
+            detailsHtml = 'Bundle: ' + details.bundle;
+        } else if (details.error) {
+            detailsHtml = details.error;
+        }
+        progressDetails.textContent = detailsHtml;
+        
+        if (details.images && details.images.length) {
+            var section = document.getElementById('imagesStatusSection');
+            var tbody = document.getElementById('imagesStatusBody');
+            if (section && tbody) {
+                section.style.display = 'block';
+                tbody.innerHTML = '';
+                details.images.forEach(function(item) {
+                    var tr = document.createElement('tr');
+                    var tdRef = document.createElement('td');
+                    tdRef.textContent = item.ref;
+                    tdRef.style.maxWidth = '280px';
+                    tdRef.title = item.ref;
+                    var tdStatus = document.createElement('td');
+                    var status = item.status || 'pending';
+                    var badge = document.createElement('span');
+                    badge.className = 'badge ';
+                    if (status === 'success') badge.className += 'bg-success';
+                    else if (status === 'failed') badge.className += 'bg-danger';
+                    else if (status === 'in_progress') badge.className += 'bg-primary';
+                    else badge.className += 'bg-secondary';
+                    badge.textContent = status;
+                    tdStatus.appendChild(badge);
+                    tr.appendChild(tdRef);
+                    tr.appendChild(tdStatus);
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+        
+        if (data.status === 'success') {
+            progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+            progressBar.classList.add('bg-success');
+            document.getElementById('cancelAction').style.display = 'none';
+            completedActions.style.display = 'block';
+            scheduleRedirect(resultUrl, 'redirectCountdown', REDIRECT_DELAY_SUCCESS);
+            return true;
+        }
+        if (data.status === 'error' || data.status === 'cancelled') {
+            progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+            progressBar.classList.add('bg-danger');
+            document.getElementById('cancelAction').style.display = 'none';
+            var errorTitle = document.getElementById('errorTitle');
+            if (errorTitle) {
+                errorTitle.textContent = data.status === 'cancelled' ? 'Job cancelled.' : 'Packaging failed.';
+            }
+            errorActions.style.display = 'block';
+            scheduleRedirect(resultUrl, 'errorCountdown', REDIRECT_DELAY_ERROR);
+            return true;
+        }
+        return false;
+    }
+    
+    var logOffset = 0;
+    function pollLog() {
+        fetch('/job/' + jobId + '/log?offset=' + logOffset)
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                var el = document.getElementById('liveLogContent');
+                if (!el) return;
+                if (data.content && data.content.length) {
+                    if (el.textContent === 'Loading...') el.textContent = '';
+                    el.textContent += data.content;
+                    el.scrollTop = el.scrollHeight;
+                } else if (logOffset === 0 && (!data.content || !data.content.length)) {
+                    el.textContent = 'No log output yet.';
+                }
+                logOffset = data.offset || 0;
+            })
+            .catch(function() {});
+    }
+    
+    function poll() {
+        fetch('/job/' + jobId + '/status')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                var done = updateProgress(data);
+                pollLog();
+                if (!done) setTimeout(poll, 800);
+            })
+            .catch(function() {
+                progressMessage.textContent = 'Checking status...';
+                pollLog();
+                setTimeout(poll, 2000);
+            });
+    }
+    
+    poll();
+    pollLog();
+})();
+</script>
+{% endblock %}

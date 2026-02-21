@@ -25,6 +25,17 @@
                     <p class="mt-2 mb-0"><small>Check the packaging log below for detailed error information.</small></p>
                     {% endif %}
                 </div>
+                {% elif job_data.get('status') == 'cancelled' %}
+                <div class="alert alert-warning">
+                    <h5 class="alert-heading">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-x-circle" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                            <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
+                        </svg>
+                        Job Cancelled
+                    </h5>
+                    <p class="mb-0">This job was cancelled by the user.</p>
+                </div>
                 {% elif job_data.get('status') == 'success' %}
                 <div class="alert alert-success">
                     <h5 class="alert-heading">
@@ -40,7 +51,23 @@
                 <div class="alert alert-info">
                     <h5 class="alert-heading">Packaging in Progress</h5>
                     <p class="mb-0">Status: {{ job_data.get('status', 'unknown') }}</p>
-                    <p class="mb-0 mt-2"><small>This page will not auto-refresh. Refresh manually to check status.</small></p>
+                    <div class="mt-2"><strong>Live log:</strong></div>
+                    <pre id="resultLiveLog" class="bg-dark text-light p-2 rounded small mt-1 mb-0" style="max-height: 180px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; font-size: 0.7rem;">Loading...</pre>
+                    <div class="mt-2 d-flex flex-wrap align-items-center gap-2">
+                        <label class="small mb-0 d-flex align-items-center gap-1">
+                            <span class="spinner-border spinner-border-sm" role="status" id="resultSpinner"></span>
+                            <span>Refresh:</span>
+                        </label>
+                        <select id="resultRefreshInterval" class="form-select form-select-sm" style="width: auto;">
+                            <option value="0">Off</option>
+                            <option value="4" selected>Every 4s</option>
+                            <option value="8">Every 8s</option>
+                            <option value="15">Every 15s</option>
+                            <option value="30">Every 30s</option>
+                        </select>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="resultRefreshNow">Refresh now</button>
+                        <span class="small text-muted" id="resultAutoRefreshText"></span>
+                    </div>
                 </div>
                 {% endif %}
                 
@@ -91,18 +118,46 @@
                     </table>
                 </div>
                 
-                <!-- Download Button -->
-                {% if bundle_exists %}
+                <!-- Actions -->
                 <div class="mb-4">
-                    <a href="{{ url_for('download', job_id=job_id) }}" class="btn btn-success btn-lg">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
-                            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-                            <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
-                        </svg>
-                        Download Bundle
-                    </a>
+                    <div class="btn-group" role="group">
+                        {% if bundle_exists %}
+                        <a href="{{ url_for('download', job_id=job_id) }}" class="btn btn-success btn-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16" style="vertical-align: -0.125em;">
+                                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                                <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                            </svg>
+                            Download Bundle
+                        </a>
+                        {% endif %}
+                        {% if job_data.get('status') == 'in_progress' %}
+                        <form method="POST" action="{{ url_for('job_cancel', job_id=job_id) }}" class="d-inline" onsubmit="return confirm('Cancel this running job?');">
+                            <button type="submit" class="btn btn-warning btn-lg">Cancel Job</button>
+                        </form>
+                        {% elif job_data.get('status') in ['error', 'cancelled'] %}
+                        <form method="POST" action="{{ url_for('job_retry', job_id=job_id) }}" class="d-inline">
+                            <button type="submit" class="btn btn-info btn-lg">Retry Job</button>
+                        </form>
+                        {% endif %}
+                        <div class="dropdown d-inline">
+                            <button class="btn btn-danger btn-lg dropdown-toggle" type="button" data-bs-toggle="dropdown">Delete</button>
+                            <ul class="dropdown-menu">
+                                <li>
+                                    <form method="POST" action="{{ url_for('job_delete', job_id=job_id) }}" class="d-inline" onsubmit="return confirm('Delete this job?');">
+                                        <button type="submit" class="dropdown-item">Delete job only</button>
+                                    </form>
+                                </li>
+                                {% if bundle_exists %}
+                                <li>
+                                    <form method="POST" action="{{ url_for('job_delete', job_id=job_id) }}" class="d-inline" onsubmit="return confirm('Delete this job and its bundle? This cannot be undone.');">
+                                        <button type="submit" class="dropdown-item" name="delete_bundle" value="true">Delete job and bundle</button>
+                                    </form>
+                                </li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                    </div>
                 </div>
-                {% endif %}
                 
                 <!-- Images List -->
                 {% if job_data.get('images') %}
@@ -168,4 +223,100 @@ function copyLog() {
     });
 }
 </script>
+{% if job_data.get('status') not in ['success', 'error'] %}
+<script>
+(function() {
+    var STORAGE_KEY = 'helm_airgap_refresh_interval';
+    var jobId = "{{ job_id }}";
+    var statusUrl = "/job/" + jobId + "/status";
+    var selectEl = document.getElementById('resultRefreshInterval');
+    var textEl = document.getElementById('resultAutoRefreshText');
+    var spinnerEl = document.getElementById('resultSpinner');
+    var timerId = null;
+    var logOffset = 0;
+
+    function pollLogResult() {
+        fetch('/job/' + jobId + '/log?offset=' + logOffset)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var el = document.getElementById('resultLiveLog');
+                if (el && data.content && data.content.length) {
+                    if (el.textContent === 'Loading...') el.textContent = '';
+                    el.textContent += data.content;
+                    el.scrollTop = el.scrollHeight;
+                }
+                logOffset = data.offset || 0;
+            })
+            .catch(function() {});
+    }
+
+    function getIntervalSec() { return parseInt(selectEl.value, 10) || 0; }
+    function saveChoice() { try { localStorage.setItem(STORAGE_KEY, selectEl.value); } catch (e) {} }
+    function restoreChoice() {
+        try {
+            var v = localStorage.getItem(STORAGE_KEY);
+            if (v !== null && selectEl.querySelector('option[value="' + v + '"]')) { selectEl.value = v; }
+        } catch (e) {}
+    }
+
+    function checkAndReload(showDone) {
+        pollLogResult();
+        fetch(statusUrl)
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.status === 'success' || data.status === 'error') {
+                    if (showDone && textEl) textEl.textContent = 'Done! Reloading...';
+                    window.location.reload();
+                } else if (textEl && getIntervalSec() > 0) {
+                    textEl.textContent = 'Next check in ' + getIntervalSec() + 's';
+                }
+            })
+            .catch(function() { if (textEl) textEl.textContent = 'Check failed. Try again.'; });
+    }
+
+    function scheduleNext() {
+        var sec = getIntervalSec();
+        if (sec <= 0) {
+            if (textEl) textEl.textContent = 'Auto-refresh is off.';
+            if (spinnerEl) spinnerEl.style.visibility = 'hidden';
+            return;
+        }
+        if (spinnerEl) spinnerEl.style.visibility = 'visible';
+        if (textEl) textEl.textContent = 'Next check in ' + sec + 's';
+        timerId = setTimeout(function() {
+            checkAndReload(true);
+            if (getIntervalSec() > 0) scheduleNext();
+        }, sec * 1000);
+    }
+
+    function startPolling() {
+        if (timerId) clearTimeout(timerId);
+        var sec = getIntervalSec();
+        if (sec <= 0) {
+            if (textEl) textEl.textContent = 'Auto-refresh is off.';
+            if (spinnerEl) spinnerEl.style.visibility = 'hidden';
+            return;
+        }
+        if (textEl) textEl.textContent = 'Next check in ' + sec + 's';
+        if (spinnerEl) spinnerEl.style.visibility = 'visible';
+        timerId = setTimeout(function() {
+            checkAndReload(true);
+            if (getIntervalSec() > 0) scheduleNext();
+        }, sec * 1000);
+    }
+
+    restoreChoice();
+    pollLogResult();
+    selectEl.addEventListener('change', function() {
+        saveChoice();
+        startPolling();
+    });
+    document.getElementById('resultRefreshNow').addEventListener('click', function() {
+        if (textEl) textEl.textContent = 'Checking...';
+        checkAndReload(false);
+    });
+    startPolling();
+})();
+</script>
+{% endif %}
 {% endblock %}

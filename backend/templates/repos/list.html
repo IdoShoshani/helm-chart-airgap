@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Helm Repositories - Helm Airgap Packager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>Helm Repositories</h2>
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Package Chart</a>
+        </div>
+
+        <div class="alert alert-info">
+            <strong>Chart list:</strong> Add repositories here. When you package a chart, you can search and select from these repos.
+            The chart list is updated periodically; you can also refresh it manually below.
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Add repository</span>
+                <span class="small text-muted">Last updated: {{ updated_at[:19] if updated_at else 'Never' }}</span>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('repos_add') }}" class="row g-2">
+                    <div class="col-md-3">
+                        <input type="text" class="form-control" name="name" placeholder="Name (e.g. bitnami)" required
+                               pattern="[a-zA-Z0-9_-]+" title="Letters, numbers, dash, underscore only">
+                    </div>
+                    <div class="col-md-6">
+                        <input type="url" class="form-control" name="url" placeholder="https://charts.example.com" required>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary w-100">Add</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('repos_update') }}" class="d-inline">
+                    <button type="submit" class="btn btn-outline-primary">Refresh chart list now</button>
+                </form>
+                <small class="text-muted ms-2">Updates all repos so search and versions stay current.</small>
+            </div>
+        </div>
+
+        {% if repos %}
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Added repositories</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>URL</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in repos %}
+                            <tr>
+                                <td><code>{{ r.name }}</code></td>
+                                <td><small>{{ r.url }}</small></td>
+                                <td>
+                                    <form method="POST" action="{{ url_for('repos_delete') }}" class="d-inline"
+                                          onsubmit="return confirm('Remove repository {{ r.name }}?');">
+                                        <input type="hidden" name="name" value="{{ r.name }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-secondary">
+            No repositories added yet. Add one above to search and package charts from it.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

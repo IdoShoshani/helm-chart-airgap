@@ -41,8 +41,9 @@ A simple Python web application that helps users package Helm charts and their c
 ## Usage
 
 1. **Select Chart Source**:
-   - Choose between Helm Repository or OCI Registry
-   - Enter the repository URL and chart name (for repos) or OCI chart URL (for OCI)
+   - **Helm Repository**: Enter the repository URL and chart name
+   - **OCI Registry**: Enter the full OCI chart URL (e.g., `oci://ghcr.io/nicklasfrahm/charts/argocd`)
+     - For private registries, configure authentication (see Configuration section)
 
 2. **Configure Chart**:
    - Optionally specify a chart version (defaults to latest)
@@ -79,7 +80,49 @@ Configuration is done via environment variables in `.env`:
 - `HELM_TIMEOUT`: Timeout for Helm operations in seconds (default: 300)
 - `IMAGE_PULL_TIMEOUT`: Timeout for image pulls in seconds (default: 600)
 - `MAX_IMAGES`: Maximum number of images allowed per bundle (default: 100)
-- `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`, `REGISTRY_SERVER`: Optional registry credentials
+- `REGISTRY_USERNAME`, `REGISTRY_PASSWORD`, `REGISTRY_SERVER`: Optional registry credentials for private OCI registries
+
+### OCI Registry Authentication
+
+The application includes a comprehensive credential management system accessible via the web UI.
+
+#### Option 1: Web UI (Easiest)
+1. Navigate to **"Registry Credentials"** in the web interface
+2. Click **"Add Credential"**
+3. Enter registry server (e.g., `ghcr.io`), username, and password/token
+4. Optionally click **"Test Login"** to verify credentials
+5. Credentials are automatically used when packaging charts
+
+#### Option 2: Docker Compose Environment Variables (Recommended for Production)
+```yaml
+environment:
+  - REGISTRY_USERNAME=your-username
+  - REGISTRY_PASSWORD=your-token-or-password
+  - REGISTRY_SERVER=ghcr.io
+```
+- Credentials are automatically synced on container startup
+- Appear in web UI with "Environment Variable" badge
+- Cannot be edited/deleted via UI (update docker-compose.yml instead)
+
+#### Option 3: Helm Registry Login + Mount Config
+```bash
+# Login on your host machine
+helm registry login ghcr.io
+# Enter username and Personal Access Token when prompted
+
+# Then mount Helm config in docker-compose.yml:
+volumes:
+  - ~/.config/helm:/home/appuser/.config/helm:ro
+```
+
+#### Credential Management Features
+- **View All Credentials**: See all configured registries with login status
+- **Test Credentials**: Verify credentials work before packaging
+- **Source Tracking**: Distinguishes between env vars and web UI credentials
+- **Status Indicators**: Shows which credentials are logged in successfully
+- **Automatic Usage**: Credentials automatically used during packaging
+
+**Note**: For GitHub Container Registry, use a Personal Access Token (PAT) with `read:packages` permission as the password.
 
 ## Project Structure
 
@@ -129,9 +172,33 @@ Configuration is done via environment variables in `.env`:
 ## Troubleshooting
 
 - **Chart download fails**: Check that the repository URL is correct and accessible
-- **Image pull fails**: Verify registry credentials if required, or check network connectivity
+- **Image pull fails**: 
+  - Verify registry credentials if required
+  - For private registries (GHCR, Quay.io, ECR), you may need to authenticate:
+    ```bash
+    # For GitHub Container Registry
+    echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+    
+    # For Quay.io
+    docker login quay.io
+    
+    # For AWS ECR Public
+    aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+    ```
+  - Then restart the container so it has access to Docker credentials
+  - Check network connectivity
+- **All images fail to download**: 
+  - Ensure Docker is running and accessible from the container
+  - Verify you have network access to the registries
+  - Check if images exist and are publicly accessible (some may require authentication)
 - **Bundle too large**: Adjust `MAX_BUNDLE_SIZE_GB` or `MAX_IMAGES` in `.env`
 - **Timeout errors**: Increase `HELM_TIMEOUT` or `IMAGE_PULL_TIMEOUT` in `.env`
+
+### Timeouts and progress
+
+- **Helm operations** (fetch chart, add repos, dependency build): `HELM_TIMEOUT` seconds per command (default **300** = 5 minutes).
+- **Image download**: `IMAGE_PULL_TIMEOUT` seconds **per image** (default **600** = 10 minutes). With many images, total time can be long (e.g. 10 images × 10 min = 100 min in the worst case).
+- After you click "Package Chart", a **progress page** shows a live progress bar for: fetching chart → extracting → rendering templates → discovering images → downloading images (with per-image progress) → building bundle.
 
 ## License
 
