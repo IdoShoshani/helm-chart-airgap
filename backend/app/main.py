@@ -7,6 +7,7 @@ from flask import Flask, render_template, request, redirect, url_for, send_file,
 from pathlib import Path
 import json
 import yaml
+from flask_wtf.csrf import CSRFProtect
 
 from . import settings
 from .packager import HelmPackager, PackagingError, JobCancelledError
@@ -20,6 +21,8 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 app = Flask(__name__, template_folder=str(TEMPLATES_DIR))
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB max file upload
+
+csrf = CSRFProtect(app)
 
 # Initialize credential manager and sync env credentials on startup
 credential_manager = CredentialManager()
@@ -493,7 +496,7 @@ def job_cancel(job_id):
         return redirect(url_for("result", job_id=job_id))
     
     # Create cancel flag
-    packager = HelmPackager()
+    packager = HelmPackager(credential_manager=credential_manager)
     packager._mark_cancelled(job_dir)
     flash("Job cancellation requested. The job will stop at the next checkpoint.", "info")
     return redirect(url_for("result", job_id=job_id))

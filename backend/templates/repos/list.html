@@ -22,6 +22,7 @@
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('repos_add') }}" class="row g-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="col-md-3">
                         <input type="text" class="form-control" name="name" placeholder="Name (e.g. bitnami)" required
                                pattern="[a-zA-Z0-9_-]+" title="Letters, numbers, dash, underscore only">
@@ -39,6 +40,7 @@
         <div class="card mb-4">
             <div class="card-body">
                 <form method="POST" action="{{ url_for('repos_update') }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-outline-primary">Refresh chart list now</button>
                 </form>
                 <small class="text-muted ms-2">Updates all repos so search and versions stay current.</small>
@@ -66,6 +68,7 @@
                                 <td>
                                     <form method="POST" action="{{ url_for('repos_delete') }}" class="d-inline"
                                           onsubmit="return confirm('Remove repository {{ r.name }}?');">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <input type="hidden" name="name" value="{{ r.name }}">
                                         <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
                                     </form>

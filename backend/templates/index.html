@@ -76,10 +76,12 @@
                                         <a href="{{ url_for('result', job_id=job.job_id) }}" class="btn btn-sm btn-outline-primary">View</a>
                                         {% if job.status == 'in_progress' %}
                                         <form method="POST" action="{{ url_for('job_cancel', job_id=job.job_id) }}" class="d-inline" onsubmit="return confirm('Cancel this running job?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <button type="submit" class="btn btn-sm btn-outline-warning">Cancel</button>
                                         </form>
                                         {% elif job.status in ['error', 'cancelled'] %}
                                         <form method="POST" action="{{ url_for('job_retry', job_id=job.job_id) }}" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <button type="submit" class="btn btn-sm btn-outline-info">Retry</button>
                                         </form>
                                         {% endif %}
@@ -87,6 +89,7 @@
                                         <a href="{{ url_for('download', job_id=job.job_id) }}" class="btn btn-sm btn-success">Download</a>
                                         {% endif %}
                                         <form method="POST" action="{{ url_for('job_delete', job_id=job.job_id) }}" class="d-inline" onsubmit="return confirm('Delete this job and its bundle? This cannot be undone.');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                                         </form>
                                     </div>
@@ -114,6 +117,7 @@
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('package') }}" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <!-- Source Type -->
                     <div class="mb-4">
                         <label class="form-label fw-bold">Chart Source *</label>
@@ -415,7 +419,10 @@ document.addEventListener('DOMContentLoaded', function() {
             reposRefreshBtn.textContent = 'Updating...';
             fetch('{{ url_for("api_repos_update") }}', {
                 method: 'POST',
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': window.csrfToken || ''
+                },
                 credentials: 'same-origin'
             })
                 .then(function(r) {

@@ -75,6 +75,7 @@ Each bundle contains:
 
 Configuration is done via environment variables in `.env`:
 
+- `SECRET_KEY`: **Required in production.** Set a strong random value (e.g. `openssl rand -hex 32`). The default is for development only and must not be used in production.
 - `FLASK_PORT`: Port for the web application (default: 8000)
 - `FLASK_DEBUG`: Enable debug mode (default: false)
 - `HELM_TIMEOUT`: Timeout for Helm operations in seconds (default: 300)

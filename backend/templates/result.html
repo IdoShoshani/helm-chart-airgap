@@ -132,10 +132,12 @@
                         {% endif %}
                         {% if job_data.get('status') == 'in_progress' %}
                         <form method="POST" action="{{ url_for('job_cancel', job_id=job_id) }}" class="d-inline" onsubmit="return confirm('Cancel this running job?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-warning btn-lg">Cancel Job</button>
                         </form>
                         {% elif job_data.get('status') in ['error', 'cancelled'] %}
                         <form method="POST" action="{{ url_for('job_retry', job_id=job_id) }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-info btn-lg">Retry Job</button>
                         </form>
                         {% endif %}
@@ -144,12 +146,14 @@
                             <ul class="dropdown-menu">
                                 <li>
                                     <form method="POST" action="{{ url_for('job_delete', job_id=job_id) }}" class="d-inline" onsubmit="return confirm('Delete this job?');">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <button type="submit" class="dropdown-item">Delete job only</button>
                                     </form>
                                 </li>
                                 {% if bundle_exists %}
                                 <li>
                                     <form method="POST" action="{{ url_for('job_delete', job_id=job_id) }}" class="d-inline" onsubmit="return confirm('Delete this job and its bundle? This cannot be undone.');">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <button type="submit" class="dropdown-item" name="delete_bundle" value="true">Delete job and bundle</button>
                                     </form>
                                 </li>

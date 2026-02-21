@@ -42,6 +42,7 @@
                 
                 <div id="cancelAction" class="mb-3">
                     <form method="POST" action="/job/{{ job_id }}/cancel" onsubmit="return confirm('Cancel this job? It will stop at the next checkpoint.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-warning">Cancel Job</button>
                     </form>
                 </div>

@@ -1,4 +1,8 @@
-"""Credential management for registry authentication."""
+"""Credential management for registry authentication.
+
+Note: Passwords are base64-encoded for obfuscation only, not encryption.
+For production, prefer environment variables or an external secret store.
+"""
 import base64
 import json
 import os
@@ -136,7 +140,8 @@ class CredentialManager:
         self._helm_registry_login(settings.REGISTRY_SERVER, settings.REGISTRY_USERNAME, settings.REGISTRY_PASSWORD)
     
     def _helm_registry_login(self, server: str, username: str, password: str) -> bool:
-        """Perform helm registry login."""
+        """Perform helm registry login. Uses DOCKER_CONFIG so credentials are stored in the
+        app's config (same location crane and helm pull use)."""
         try:
             login_cmd = [
                 self.helm_bin, "registry", "login", server,
@@ -148,7 +153,8 @@ class CredentialManager:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                env=self._crane_env(),
             )
             stdout, stderr = process.communicate(input=password)
             return process.returncode == 0
