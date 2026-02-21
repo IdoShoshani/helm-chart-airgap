@@ -36,3 +36,7 @@ Thumbs.db
 
 # Docker
 *.tar.gz
+
+# Generated / local output (do not commit)
+output.txt
+kube-prometheus-stack/
