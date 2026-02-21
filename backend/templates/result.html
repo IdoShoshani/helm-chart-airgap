@@ -51,6 +51,17 @@
                 <div class="alert alert-info">
                     <h5 class="alert-heading">Packaging in Progress</h5>
                     <p class="mb-0">Status: {{ job_data.get('status', 'unknown') }}</p>
+                    <div class="mt-3 mb-2">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span id="resultProgressMessage">Starting...</span>
+                            <span id="resultProgressPercent">0%</span>
+                        </div>
+                        <div class="progress" style="height: 24px;">
+                            <div id="resultProgressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                                 role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                        </div>
+                        <div id="resultProgressDetails" class="small text-muted mt-1" style="min-height: 1.5em;"></div>
+                    </div>
                     <div class="mt-2"><strong>Live log:</strong></div>
                     <pre id="resultLiveLog" class="bg-dark text-light p-2 rounded small mt-1 mb-0" style="max-height: 180px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; font-size: 0.7rem;">Loading...</pre>
                     <div class="mt-2 d-flex flex-wrap align-items-center gap-2">
@@ -188,8 +199,8 @@
                 </div>
                 {% endif %}
                 
-                <!-- Log Output -->
-                {% if log_content %}
+                <!-- Log Output (only when job is done - avoid duplicate with live log during in_progress) -->
+                {% if log_content and job_data.get('status') in ['success', 'error', 'cancelled'] %}
                 <div class="mb-4">
                     <h4>Packaging Log</h4>
                     <div class="card bg-dark text-light">
@@ -263,16 +274,48 @@ function copyLog() {
         } catch (e) {}
     }
 
+    function updateResultProgress(data) {
+        var progressBar = document.getElementById('resultProgressBar');
+        var progressMessage = document.getElementById('resultProgressMessage');
+        var progressPercent = document.getElementById('resultProgressPercent');
+        var progressDetails = document.getElementById('resultProgressDetails');
+        if (!progressBar || !progressMessage) return;
+        var progress = data.progress || {};
+        var percent = Math.round(progress.percent || 0);
+        var message = progress.message || 'Processing...';
+        var details = progress.details || {};
+        progressBar.style.width = percent + '%';
+        progressBar.setAttribute('aria-valuenow', percent);
+        progressBar.textContent = percent + '%';
+        progressMessage.textContent = message;
+        if (progressPercent) progressPercent.textContent = percent + '%';
+        if (progressDetails) {
+            var detailsText = '';
+            if (details.current !== undefined && details.total !== undefined) {
+                detailsText = 'Image ' + details.current + ' of ' + details.total;
+                if (details.image) detailsText += ': ' + details.image;
+            } else if (details.bundle) {
+                detailsText = 'Bundle: ' + details.bundle;
+            } else if (details.error) {
+                detailsText = details.error;
+            }
+            progressDetails.textContent = detailsText;
+        }
+    }
+
     function checkAndReload(showDone) {
         pollLogResult();
         fetch(statusUrl)
             .then(function(res) { return res.json(); })
             .then(function(data) {
-                if (data.status === 'success' || data.status === 'error') {
+                if (data.status === 'success' || data.status === 'error' || data.status === 'cancelled') {
                     if (showDone && textEl) textEl.textContent = 'Done! Reloading...';
                     window.location.reload();
-                } else if (textEl && getIntervalSec() > 0) {
-                    textEl.textContent = 'Next check in ' + getIntervalSec() + 's';
+                } else {
+                    updateResultProgress(data);
+                    if (textEl && getIntervalSec() > 0) {
+                        textEl.textContent = 'Next check in ' + getIntervalSec() + 's';
+                    }
                 }
             })
             .catch(function() { if (textEl) textEl.textContent = 'Check failed. Try again.'; });
@@ -311,6 +354,7 @@ function copyLog() {
 
     restoreChoice();
     pollLogResult();
+    fetch(statusUrl).then(function(r) { return r.json(); }).then(updateResultProgress).catch(function() {});
     selectEl.addEventListener('change', function() {
         saveChoice();
         startPolling();
