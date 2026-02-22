@@ -121,6 +121,7 @@ def package():
         values_yaml = request.form.get("values_yaml", "").strip()
         bundle_name = request.form.get("bundle_name", "").strip()
         include_images = request.form.get("include_images", "yes") == "yes"
+        manifest_only = request.form.get("manifest_only", "no") == "yes"
         
         # Handle uploaded values file
         values_file = None
@@ -177,12 +178,52 @@ def package():
                 "values_yaml": values_yaml,
                 "bundle_name": bundle_name,
                 "include_images": include_images,
+                "manifest_only": manifest_only,
             }))
         
-        # Create job dir first so we have job_id for progress page
         packager = HelmPackager(credential_manager=credential_manager)
         job_id, job_dir = packager._create_job_dir()
-        # Write initial progress so progress page has something to show
+        
+        if include_images:
+            packager._write_progress(
+                job_dir, "discovering", 0,
+                "Fetching chart (manifest only)..." if manifest_only else "Discovering images...",
+                {}
+            )
+            
+            def run_discovery():
+                try:
+                    if source_type == "repo":
+                        packager.discover_images_from_repo(
+                            repo_url=repo_url,
+                            chart_name=chart_name,
+                            chart_version=chart_version,
+                            values_yaml=values_yaml,
+                            bundle_name=bundle_name or None,
+                            _job_id=job_id,
+                            _job_dir=job_dir,
+                            manifest_only=manifest_only
+                        )
+                    else:
+                        packager.discover_images_from_oci(
+                            oci_chart=oci_chart,
+                            chart_version=oci_version,
+                            values_yaml=values_yaml,
+                            bundle_name=bundle_name or None,
+                            _job_id=job_id,
+                            _job_dir=job_dir,
+                            manifest_only=manifest_only
+                        )
+                except Exception:
+                    pass  # Error stored in job metadata
+            
+            thread = threading.Thread(target=run_discovery)
+            thread.daemon = True
+            thread.start()
+            
+            return redirect(url_for("select_images", job_id=job_id))
+        
+        # No image selection: run full packaging directly
         packager._write_progress(job_dir, "starting", 0, "Starting packaging job...", {})
         
         def run_package():
@@ -211,7 +252,6 @@ def package():
             except Exception:
                 pass  # Error stored in job metadata
         
-        # Run packaging in background
         thread = threading.Thread(target=run_package)
         thread.daemon = True
         thread.start()
@@ -230,10 +270,181 @@ def package():
             "values_yaml": request.form.get("values_yaml", ""),
             "bundle_name": request.form.get("bundle_name", ""),
             "include_images": request.form.get("include_images", "yes"),
+            "manifest_only": request.form.get("manifest_only", "no") == "yes",
         }))
     except Exception as e:
         flash(f"Unexpected error: {str(e)}", "error")
         return render_template("index.html", **_index_context())
+
+
+@app.route("/job/<job_id>/select-images")
+def select_images(job_id):
+    """Image selection page (after discovery, before packaging)."""
+    job_dir = settings.JOBS_DIR / job_id
+    if not job_dir.exists():
+        flash(f"Job {job_id} not found", "error")
+        return redirect(url_for("index"))
+    
+    job_json_path = job_dir / "job.json"
+    if job_json_path.exists():
+        with open(job_json_path, "r") as f:
+            job_data = json.load(f)
+    else:
+        job_data = {}
+    
+    # Load discovered images (may be empty if still discovering)
+    images = []
+    images_json = job_dir / "images.json"
+    if images_json.exists():
+        try:
+            with open(images_json, "r") as f:
+                images = json.load(f)
+        except Exception:
+            pass
+    
+    return render_template("select_images.html", job_id=job_id, job_data=job_data, images=images)
+
+
+@app.route("/job/<job_id>/images")
+def job_images(job_id):
+    """Return discovered images as JSON (for polling)."""
+    job_dir = settings.JOBS_DIR / job_id
+    if not job_dir.exists():
+        return jsonify({"error": "Job not found"}), 404
+    
+    images_json = job_dir / "images.json"
+    if not images_json.exists():
+        return jsonify({"images": [], "ready": False})
+    
+    try:
+        with open(images_json, "r") as f:
+            images = json.load(f)
+        return jsonify({"images": images, "ready": True})
+    except Exception:
+        return jsonify({"images": [], "ready": False})
+
+
+@app.route("/job/<job_id>/fetch-images-url")
+def fetch_images_url(job_id):
+    """Fetch image list from URL. Query param: url."""
+    url = request.args.get("url", "").strip()
+    if not url or not (url.startswith("http://") or url.startswith("https://")):
+        return jsonify({"error": "Valid HTTP/HTTPS URL required"}), 400
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, headers={"User-Agent": "Helm-Airgap-Packager/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            content = resp.read().decode("utf-8", errors="replace")
+        return jsonify({"content": content})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/job/<job_id>/validate-images", methods=["POST"])
+def validate_images(job_id):
+    """Validate that images exist (can be resolved). JSON body: { images: [...] }."""
+    job_dir = settings.JOBS_DIR / job_id
+    if not job_dir.exists():
+        return jsonify({"error": "Job not found"}), 404
+    data = request.get_json() or {}
+    images = data.get("images", [])
+    if not images:
+        return jsonify({"valid": [], "invalid": []})
+    packager = HelmPackager(credential_manager=credential_manager)
+    valid = []
+    invalid = []
+    for ref in images:
+        ref = (ref or "").strip()
+        if not ref:
+            continue
+        digest = packager._get_image_digest(ref, job_dir)
+        if digest:
+            valid.append(ref)
+        else:
+            invalid.append({"ref": ref, "error": "Image not found or inaccessible"})
+    return jsonify({"valid": valid, "invalid": invalid})
+
+
+@app.route("/job/<job_id>/start-packaging", methods=["POST"])
+def start_packaging(job_id):
+    """Start packaging with user-selected images."""
+    job_dir = settings.JOBS_DIR / job_id
+    if not job_dir.exists():
+        flash(f"Job {job_id} not found", "error")
+        return redirect(url_for("index"))
+    
+    job_json_path = job_dir / "job.json"
+    if not job_json_path.exists():
+        flash("Job metadata not found", "error")
+        return redirect(url_for("index"))
+    
+    with open(job_json_path, "r") as f:
+        job_data = json.load(f)
+    
+    if job_data.get("status") != "image_selection":
+        flash("Job is not in image selection state", "error")
+        return redirect(url_for("index"))
+    
+    # Parse selected images (checkboxes) and custom images (textarea)
+    selected = request.form.getlist("selected_image")
+    custom_text = request.form.get("custom_images", "").strip()
+    bundle_name = request.form.get("bundle_name", "").strip() or None
+    
+    # Parse custom images: one per line, strip # comments
+    custom_images = []
+    for line in custom_text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            custom_images.append(line)
+    
+    # Combine and deduplicate
+    image_list = list(dict.fromkeys(selected + custom_images))
+    
+    if job_data.get("manifest_only") and not image_list:
+        flash("Manifest-only mode requires at least one image. Add images in the text area.", "error")
+        return redirect(url_for("select_images", job_id=job_id))
+    
+    packager = HelmPackager(credential_manager=credential_manager)
+    packager._write_progress(job_dir, "starting", 0, "Starting packaging with selected images...", {})
+    
+    def run_package():
+        try:
+            source_type = job_data.get("source_type", "repo")
+            if source_type == "repo":
+                packager.package_from_repo(
+                    repo_url=job_data.get("repo_url", ""),
+                    chart_name=job_data.get("chart_name", ""),
+                    chart_version=job_data.get("chart_version"),
+                    values_yaml=job_data.get("values_yaml"),
+                    bundle_name=bundle_name,
+                    include_images=True,
+                    image_list_override=image_list,
+                    _job_id=job_id,
+                    _job_dir=job_dir,
+                    _resume_from_discovery=True,
+                    _resume_bundle_name=bundle_name
+                )
+            else:
+                packager.package_from_oci(
+                    oci_chart=job_data.get("oci_chart", ""),
+                    chart_version=job_data.get("chart_version"),
+                    values_yaml=job_data.get("values_yaml"),
+                    bundle_name=bundle_name,
+                    include_images=True,
+                    image_list_override=image_list,
+                    _job_id=job_id,
+                    _job_dir=job_dir,
+                    _resume_from_discovery=True,
+                    _resume_bundle_name=bundle_name
+                )
+        except Exception:
+            pass  # Error stored in job metadata
+    
+    thread = threading.Thread(target=run_package)
+    thread.daemon = True
+    thread.start()
+    
+    return redirect(url_for("job_progress", job_id=job_id))
 
 
 @app.route("/result/<job_id>")
@@ -245,11 +456,12 @@ def result(job_id):
         flash(f"Job {job_id} not found", "error")
         return redirect(url_for("index"))
     
-    # Load job metadata
     job_json_path = job_dir / "job.json"
     if job_json_path.exists():
         with open(job_json_path, "r") as f:
             job_data = json.load(f)
+        if job_data.get("status") == "image_selection":
+            return redirect(url_for("select_images", job_id=job_id))
     else:
         job_data = {}
     

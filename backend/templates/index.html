@@ -60,6 +60,10 @@
                                     <span class="badge bg-warning">Cancelled</span>
                                     {% elif job.status == 'in_progress' %}
                                     <span class="badge bg-primary">Running</span>
+                                    {% elif job.status == 'image_selection' %}
+                                    <span class="badge bg-info">Select images</span>
+                                    {% elif job.status == 'discovering' %}
+                                    <span class="badge bg-secondary">Discovering</span>
                                     {% else %}
                                     <span class="badge bg-secondary">{{ job.status or 'Unknown' }}</span>
                                     {% endif %}
@@ -73,7 +77,12 @@
                                 </td>
                                 <td>
                                     <div class="btn-group" role="group">
+                                        {% if job.status in ['image_selection', 'discovering'] %}
+                                        <a href="{{ url_for('select_images', job_id=job.job_id) }}" class="btn btn-sm btn-outline-primary">{% if job.status == 'image_selection' %}Select images{% else %}View progress{% endif %}</a>
+                                        {% endif %}
+                                        {% if job.status not in ['image_selection', 'discovering'] %}
                                         <a href="{{ url_for('result', job_id=job.job_id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                                        {% endif %}
                                         {% if job.status == 'in_progress' %}
                                         <form method="POST" action="{{ url_for('job_cancel', job_id=job.job_id) }}" class="d-inline" onsubmit="return confirm('Cancel this running job?');">
                                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -253,6 +262,14 @@
                                 Include container images in bundle
                             </label>
                         </div>
+                        <div class="form-check mt-1" id="manifestOnlyWrap">
+                            <input class="form-check-input" type="checkbox" id="manifest_only" name="manifest_only" value="yes"
+                                   {% if manifest_only %}checked{% endif %}>
+                            <label class="form-check-label" for="manifest_only">
+                                Manifest only — skip discovery, use my image list
+                            </label>
+                        </div>
+                        <small class="text-muted d-block mt-1">When &quot;Manifest only&quot; is checked, chart discovery is skipped. You provide the full image list (paste, upload, or URL).</small>
                     </div>
                     
                     <div class="d-grid">
@@ -269,15 +286,9 @@
                     <ol>
                         <li>Enter your Helm chart source (repository or OCI registry)</li>
                         <li>Optionally provide values.yaml to customize the chart</li>
-                        <li>Click &quot;Package Chart&quot; — you&apos;ll see a <strong>progress page</strong> with a live progress bar</li>
-                        <li>The tool will automatically:
-                            <ul>
-                                <li>Download the Helm chart and dependencies</li>
-                                <li>Discover all container images referenced in the chart</li>
-                                <li>Download all images</li>
-                                <li>Package everything into a single bundle</li>
-                            </ul>
-                        </li>
+                        <li>Click &quot;Package Chart&quot; — with images enabled, you&apos;ll first <strong>select which images</strong> to include (from discovered images + optional custom list)</li>
+                        <li>You&apos;ll see a progress page with a live progress bar</li>
+                        <li>The tool downloads the chart, selected images, and packages everything into a single bundle</li>
                         <li>Download the bundle and transfer it to your air-gapped environment</li>
                     </ol>
                 </div>
@@ -315,6 +326,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     repoRadio.addEventListener('change', toggleFields);
     ociRadio.addEventListener('change', toggleFields);
+
+    var includeImages = document.getElementById('include_images');
+    var manifestOnlyWrap = document.getElementById('manifestOnlyWrap');
+    var manifestOnly = document.getElementById('manifest_only');
+    function toggleManifestOnly() {
+        if (includeImages && manifestOnlyWrap) {
+            manifestOnlyWrap.style.display = includeImages.checked ? 'block' : 'none';
+            if (!includeImages.checked && manifestOnly) manifestOnly.checked = false;
+        }
+    }
+    if (includeImages) includeImages.addEventListener('change', toggleManifestOnly);
+    toggleManifestOnly();
 
     // Repo flow: select repo, search charts, select version
     var repoSelect = document.getElementById('repo_select');
